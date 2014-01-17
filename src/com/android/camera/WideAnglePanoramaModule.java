@@ -43,7 +43,7 @@ import android.view.OrientationEventListener;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-
+import com.android.camera.PhotoModule;
 import com.android.camera.CameraManager.CameraProxy;
 import com.android.camera.app.OrientationManager;
 import com.android.camera.data.LocalData;
@@ -482,9 +482,24 @@ public class WideAnglePanoramaModule
     @Override
     public void onPreviewUILayoutChange(int l, int t, int r, int b) {
         Log.d(TAG, "layout change: " + (r - l) + "/" + (b - t));
+        boolean capturePending = false;
+        if (mCaptureState == CAPTURE_STATE_MOSAIC){
+            capturePending = true;
+        }
         mPreviewUIWidth = r - l;
         mPreviewUIHeight = b - t;
         configMosaicPreview();
+        if (capturePending == true){
+            mMainHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (!mPaused){
+                        mMainHandler.removeMessages(MSG_RESET_TO_PREVIEW);
+                        startCapture();
+                    }
+                }
+            });
+        }
     }
 
     @Override
@@ -742,7 +757,8 @@ public class WideAnglePanoramaModule
         if (jpegData != null) {
             String filename = PanoUtil.createName(
                     mActivity.getResources().getString(R.string.pano_file_name_format), mTimeTaken);
-            String filepath = Storage.generateFilepath(filename);
+            String filepath = Storage.generateFilepath(filename,
+                              PhotoModule.PIXEL_FORMAT_JPEG);
 
             UsageStatistics.onEvent(UsageStatistics.COMPONENT_PANORAMA,
                     UsageStatistics.ACTION_CAPTURE_DONE, null, 0,
@@ -854,6 +870,10 @@ public class WideAnglePanoramaModule
     }
 
     @Override
+    public void resizeForPreviewAspectRatio() {
+    }
+
+    @Override
     public void onResumeBeforeSuper() {
         mPaused = false;
     }
@@ -888,7 +908,12 @@ public class WideAnglePanoramaModule
             mPreviewUIWidth = size.x;
             mPreviewUIHeight = size.y;
             configMosaicPreview();
-            mActivity.updateStorageSpaceAndHint();
+            mMainHandler.post(new Runnable(){
+                @Override
+                public void run(){
+                    mActivity.updateStorageSpaceAndHint();
+                }
+            });
         }
         keepScreenOnAwhile();
 
@@ -978,6 +1003,7 @@ public class WideAnglePanoramaModule
             // image data from SurfaceTexture.
             mCameraDevice.setDisplayOrientation(0);
 
+            if (mCameraTexture != null)
             mCameraTexture.setOnFrameAvailableListener(this);
             mCameraDevice.setPreviewTexture(mCameraTexture);
         }
