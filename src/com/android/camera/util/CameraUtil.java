@@ -65,14 +65,10 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
 import java.util.Date;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.TreeSet;
 
 /**
  * Collection of utility functions used in this package.
@@ -114,26 +110,21 @@ public class CameraUtil {
     private static final String AUTO_WHITE_BALANCE_LOCK_SUPPORTED = "auto-whitebalance-lock-supported";
     private static final String VIDEO_SNAPSHOT_SUPPORTED = "video-snapshot-supported";
     public static final String SCENE_MODE_HDR = "hdr";
-    public static final String SCENE_MODE_ASD = "asd";
     public static final String TRUE = "true";
     public static final String FALSE = "false";
 
     private static boolean sEnableZSL;
 
-    // Do not change the focus mode when TTF is used
-    private static boolean sNoFocusModeChangeForTouch;
-
-
     // Fields for the show-on-maps-functionality
     private static final String MAPS_PACKAGE_NAME = "com.google.android.apps.maps";
     private static final String MAPS_CLASS_NAME = "com.google.android.maps.MapsActivity";
 
-    /** Has to be in sync with the receiving MovieActivity. */
-    public static final String KEY_TREAT_UP_AS_BACK = "treat-up-as-back";
-
     public static boolean isZSLEnabled() {
         return sEnableZSL;
     }
+
+    /** Has to be in sync with the receiving MovieActivity. */
+    public static final String KEY_TREAT_UP_AS_BACK = "treat-up-as-back";
 
     public static boolean isSupported(String value, List<String> supported) {
         return supported == null ? false : supported.indexOf(value) >= 0;
@@ -154,11 +145,6 @@ public class CameraUtil {
     public static boolean isCameraHdrSupported(Parameters params) {
         List<String> supported = params.getSupportedSceneModes();
         return (supported != null) && supported.contains(SCENE_MODE_HDR);
-    }
-
-    public static boolean isAutoSceneDetectionSupported(Parameters params) {
-        List<String> supported = params.getSupportedSceneModes();
-        return (supported != null) && supported.contains(SCENE_MODE_ASD) && (params.get("asd-mode") != null);
     }
 
     public static boolean isMeteringAreaSupported(Parameters params) {
@@ -193,8 +179,18 @@ public class CameraUtil {
 
     private static float sPixelDensity = 1;
     private static ImageFileNamer sImageFileNamer;
+
     // Use samsung HDR format
     private static boolean sSamsungHDRFormat;
+
+    // Samsung camcorder mode
+    private static boolean sSamsungCamMode;
+
+    // For setting video size before recording starts
+    private static boolean sEarlyVideoSize;
+
+    // Continuous focus mode needs autoFocusCall
+    private static boolean sContinuousFocusNeedsAutoFocusCall;
 
     private CameraUtil() {
     }
@@ -208,8 +204,10 @@ public class CameraUtil {
         sImageFileNamer = new ImageFileNamer(
                 context.getString(R.string.image_file_name_format));
         sEnableZSL = context.getResources().getBoolean(R.bool.enableZSL);
-        sNoFocusModeChangeForTouch = context.getResources().getBoolean(
-                R.bool.useContinuosFocusForTouch);
+        sSamsungCamMode = context.getResources().getBoolean(R.bool.needsSamsungCamMode);
+        sEarlyVideoSize = context.getResources().getBoolean(R.bool.needsEarlyVideoSize);
+        sContinuousFocusNeedsAutoFocusCall =
+            context.getResources().getBoolean(R.bool.continuousFocusNeedsAutoFocusCall);
         sSamsungHDRFormat = context.getResources().getBoolean(R.bool.needsSamsungHDRFormat);
     }
 
@@ -217,12 +215,16 @@ public class CameraUtil {
         return Math.round(sPixelDensity * dp);
     }
 
-    public static boolean needSamsungHDRFormat() {
-        return sSamsungHDRFormat;
+    public static boolean useSamsungCamMode() {
+        return sSamsungCamMode;
     }
 
-    public static boolean noFocusModeChangeForTouch() {
-        return sNoFocusModeChangeForTouch;
+    public static boolean isContinuousFocusNeedsAutoFocusCall() {
+        return sContinuousFocusNeedsAutoFocusCall;
+    }
+
+    public static boolean needSamsungHDRFormat() {
+        return sSamsungHDRFormat;
     }
 
     // Rotates the bitmap by the specified degree.
@@ -389,7 +391,8 @@ public class CameraUtil {
                 else if (b > 262143)
                     b = 262143;
 
-                rgb[yp] = 0xff000000 | ((r << 6) & 0xff0000) | ((g >> 2) & 0xff00) | ((b >> 10) & 0xff);
+                rgb[yp] = 0xff000000 | ((r << 6) & 0xff0000)
+                        | ((g >> 2) & 0xff00) | ((b >> 10) & 0xff);
             }
         }
         return Bitmap.createBitmap(rgb, width, height, Bitmap.Config.ARGB_8888);
@@ -660,25 +663,13 @@ public class CameraUtil {
         return optimalSize;
     }
 
-    public static void dumpParameters(Parameters params) {
-        Set<String> sortedParams = new TreeSet<String>();
-        sortedParams.addAll(Arrays.asList(params.flatten().split(";")));
-        StringBuilder sb = new StringBuilder();
-        sb.append("[");
-        Iterator<String> i = sortedParams.iterator();
-        while (i.hasNext()) {
-            String nextParam = i.next();
-            if ((sb.length() + nextParam.length()) > 2044) {
-                Log.d(TAG, "Parameters: " + sb.toString());
-                sb = new StringBuilder();
-            }
-            sb.append(nextParam);
-            if (i.hasNext()) {
-                sb.append(", ");
-            }
+    public static void dumpParameters(Parameters parameters) {
+        String flattened = parameters.flatten();
+        StringTokenizer tokenizer = new StringTokenizer(flattened, ";");
+        Log.d(TAG, "Dump all camera parameters:");
+        while (tokenizer.hasMoreElements()) {
+            Log.d(TAG, tokenizer.nextToken());
         }
-        sb.append("]");
-        Log.d(TAG, "Parameters: " + sb.toString());
     }
 
     /**
@@ -1105,4 +1096,9 @@ public class CameraUtil {
         }
         return ret;
     }
+
+    public static boolean needsEarlyVideoSize() {
+        return sEarlyVideoSize;
+    }
+
 }

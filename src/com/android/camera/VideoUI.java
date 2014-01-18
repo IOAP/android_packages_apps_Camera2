@@ -35,19 +35,18 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.View.OnLayoutChangeListener;
 import android.view.ViewGroup;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.widget.FrameLayout.LayoutParams;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
-import android.view.View.OnLayoutChangeListener;
 
 import com.android.camera.CameraPreference.OnPreferenceChangedListener;
-import com.android.camera.FocusOverlayManager.FocusUI;
 import com.android.camera.ui.AbstractSettingPopup;
 import com.android.camera.ui.CameraControls;
 import com.android.camera.ui.CameraRootView;
-import com.android.camera.ui.FocusIndicator;
 import com.android.camera.ui.ModuleSwitcher;
 import com.android.camera.ui.PieRenderer;
 import com.android.camera.ui.RenderOverlay;
@@ -59,8 +58,9 @@ import com.android.camera2.R;
 import java.util.List;
 
 public class VideoUI implements PieRenderer.PieListener,
+        LocationManager.Listener,
         PreviewGestures.SingleTapListener,
-        CameraRootView.MyDisplayListener, FocusUI,
+        CameraRootView.MyDisplayListener,
         SurfaceTextureListener, SurfaceHolder.Callback {
     private static final String TAG = "CAM_VideoUI";
     private static final int UPDATE_TRANSFORM_MATRIX = 1;
@@ -82,6 +82,7 @@ public class VideoUI implements PieRenderer.PieListener,
     private RenderOverlay mRenderOverlay;
     private PieRenderer mPieRenderer;
     private VideoMenu mVideoMenu;
+    public boolean mVideoMenuInitialized;
     private CameraControls mCameraControls;
     private SettingsPopup mPopup;
     private ZoomRenderer mZoomRenderer;
@@ -160,7 +161,7 @@ public class VideoUI implements PieRenderer.PieListener,
             showAtLocation(mRootView, Gravity.CENTER, 0, 0);
         }
 
-        public void dismiss() {
+        public void dismiss(boolean topLevelOnly) {
             super.dismiss();
             popupDismissed();
             showUI();
@@ -170,7 +171,20 @@ public class VideoUI implements PieRenderer.PieListener,
             // is dimissed.
             mActivity.setSystemBarsVisibility(false);
         }
+
+        @Override
+        public void dismiss() {
+            // Called by Framework when touch outside the popup or hit back key
+            dismiss(true);
+        }
     }
+
+    // Corner indicator for gps
+    private ImageView mGpsIndicator;
+    private ImageView mGpsIndicatorBlinker;
+
+    private boolean mGpsAnimationStarted;
+    private Animation mGpsAnimation;
 
     public VideoUI(CameraActivity activity, VideoController controller, View parent) {
         mActivity = activity;
@@ -186,6 +200,8 @@ public class VideoUI implements PieRenderer.PieListener,
         mSwitcher = (ModuleSwitcher) mRootView.findViewById(R.id.camera_switcher);
         mSwitcher.setCurrentIndex(ModuleSwitcher.VIDEO_MODULE_INDEX);
         mSwitcher.setSwitchListener(mActivity);
+        mGpsAnimation = AnimationUtils.loadAnimation(activity,
+            R.anim.gps_animation);
         initializeMiscControls();
         initializeControlByIntent();
         initializeOverlay();
@@ -220,6 +236,8 @@ public class VideoUI implements PieRenderer.PieListener,
         mOnScreenIndicators = new OnScreenIndicators(mActivity,
                 mRootView.findViewById(R.id.on_screen_indicators));
         mOnScreenIndicators.resetToDefault();
+        mGpsIndicator = (ImageView) mRootView.findViewById(R.id.indicator_gps);
+        mGpsIndicatorBlinker = (ImageView) mRootView.findViewById(R.id.indicator_gps_blinker);
         if (mController.isVideoCaptureIntent()) {
             hideSwitcher();
             mActivity.getLayoutInflater().inflate(R.layout.review_module_control,
@@ -284,7 +302,6 @@ public class VideoUI implements PieRenderer.PieListener,
 
     public void onScreenSizeChanged(int width, int height, int previewWidth, int previewHeight) {
         setTransformMatrix(width, height);
-        mController.onScreenSizeChanged(width, height, previewWidth, previewHeight);
     }
 
     private void setTransformMatrix(int width, int height) {
@@ -403,14 +420,6 @@ public class VideoUI implements PieRenderer.PieListener,
         return ret;
     }
 
-    public boolean removeTopLevelPopup() {
-        if (mPopup != null) {
-            dismissPopup();
-            return true;
-        }
-        return false;
-    }
-
     public void enableCameraControls(boolean enable) {
         if (mGestures != null) {
             mGestures.setZoomOnly(!enable);
@@ -518,6 +527,43 @@ public class VideoUI implements PieRenderer.PieListener,
 
     }
 
+    @Override
+    public void showGpsOnScreenIndicator(boolean enabled, boolean hasSignal) {
+        if (mGpsIndicator == null || mGpsIndicatorBlinker == null) {
+            return;
+        }
+
+        if (!enabled) {
+            mGpsIndicator.setImageResource(R.drawable.ic_viewfinder_gps_off);
+        } else if (hasSignal) {
+            mGpsIndicator.setImageResource(R.drawable.ic_viewfinder_gps_on);
+        } else {
+            mGpsIndicator.setImageResource(R.drawable.ic_viewfinder_gps_no_signal);
+        }
+        mGpsIndicator.setVisibility(View.VISIBLE);
+
+        if (enabled && !hasSignal && !mGpsAnimationStarted) {
+            mGpsAnimationStarted = true;
+            mGpsIndicatorBlinker.setVisibility(View.VISIBLE);
+            mGpsIndicatorBlinker.startAnimation(mGpsAnimation);
+        } else if (enabled && hasSignal) {
+            mGpsAnimationStarted = false;
+            mGpsIndicatorBlinker.setVisibility(View.GONE);
+            mGpsIndicatorBlinker.clearAnimation();
+        }
+    }
+
+    @Override
+    public void hideGpsOnScreenIndicator() {
+        if (mGpsIndicator == null || mGpsIndicatorBlinker == null) {
+            return;
+        }
+        mGpsIndicator.setVisibility(View.GONE);
+        mGpsIndicatorBlinker.setVisibility(View.GONE);
+        mGpsIndicatorBlinker.clearAnimation();
+        mGpsAnimationStarted = false;
+    }
+
     public void setAspectRatio(double ratio) {
         if (mOrientationResize && CameraUtil.isScreenRotated(mActivity)) {
             ratio = 1 / ratio;
@@ -544,8 +590,10 @@ public class VideoUI implements PieRenderer.PieListener,
     }
 
     public void dismissPopup() {
-        // In review mode, we do not want to bring up the camera UI
-        if (mController.isInReviewMode()) return;
+        dismissPopup(true);
+    }
+
+    private void dismissPopup(boolean fullScreen) {
         if (mPopup != null) {
             mPopup.dismiss();
         }
@@ -557,23 +605,10 @@ public class VideoUI implements PieRenderer.PieListener,
 
     public void showPopup(AbstractSettingPopup popup) {
         hideUI();
-
         if (mPopup != null) {
-            mPopup.dismiss();
+            mPopup.dismiss(false);
         }
         mPopup = new SettingsPopup(popup);
-    }
-
-    public void onShowSwitcherPopup() {
-        hidePieRenderer();
-    }
-
-    public boolean hidePieRenderer() {
-        if (mPieRenderer != null && mPieRenderer.showsItems()) {
-            mPieRenderer.hide();
-            return true;
-        }
-        return false;
     }
 
     // disable preview gestures after shutter is pressed
@@ -667,6 +702,19 @@ public class VideoUI implements PieRenderer.PieListener,
         }
     }
 
+    public boolean onBackPressed() {
+    if (mPieRenderer != null && mPieRenderer.showsItems()) {
+            mPieRenderer.hide();
+            return true;
+        }
+        if (mController.isVideoCaptureIntent()) {
+            //Should not reach here
+            return true;
+        } else {
+            return collapseCameraControls();
+        }
+    }
+
     public void onPreviewFocusChanged(boolean previewFocused) {
         if (previewFocused) {
             showUI();
@@ -685,6 +733,7 @@ public class VideoUI implements PieRenderer.PieListener,
 
     public void initializePopup(PreferenceGroup pref) {
         mVideoMenu.initialize(pref);
+        mVideoMenuInitialized = true;
     }
 
     public void initializeZoom(Parameters param) {
@@ -727,6 +776,13 @@ public class VideoUI implements PieRenderer.PieListener,
         return mCameraControls.getVisibility() == View.VISIBLE;
     }
 
+    public boolean onScaleStepResize(boolean direction) {
+        if (mGestures != null) {
+            return mGestures.onScaleStepResize(direction);
+        }
+        return false;
+    }
+
     @Override
     public void onDisplayChanged() {
         mCameraControls.checkLayoutFlip();
@@ -756,50 +812,6 @@ public class VideoUI implements PieRenderer.PieListener,
                 mPieRenderer.setBlockFocus(false);
             }
         }
-    }
-
-    // implement focusUI interface
-    private FocusIndicator getFocusIndicator() {
-        return mPieRenderer;
-    }
-
-    @Override
-    public boolean hasFaces() {
-        return false;
-    }
-
-    @Override
-    public void clearFocus() {
-        FocusIndicator indicator = getFocusIndicator();
-        if (indicator != null) indicator.clear();
-    }
-
-    @Override
-    public void setFocusPosition(int x, int y) {
-        mPieRenderer.setFocus(x, y);
-    }
-
-    @Override
-    public void onFocusStarted(){
-        getFocusIndicator().showStart();
-    }
-
-    @Override
-    public void onFocusSucceeded(boolean timeOut) {
-        getFocusIndicator().showSuccess(timeOut);
-    }
-
-    @Override
-    public void onFocusFailed(boolean timeOut) {
-        getFocusIndicator().showFail(timeOut);
-    }
-
-    @Override
-    public void pauseFaceDetection() {
-    }
-
-    @Override
-    public void resumeFaceDetection() {
     }
 
     public SurfaceTexture getSurfaceTexture() {

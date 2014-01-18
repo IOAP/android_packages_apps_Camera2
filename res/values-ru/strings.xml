@@ -110,8 +110,6 @@
     <string name="setting_off" msgid="6782191065550276632">"Выкл."</string>
     <string name="setting_on" msgid="9086728135773197891">"Вкл."</string>
     <string name="pref_video_quality_title" msgid="5887153490982738588">"Качество видео"</string>
-    <string name="pref_video_quality_entry_high" msgid="1613578418842803393">"Высокое"</string>
-    <string name="pref_video_quality_entry_low" msgid="737962621299050603">"Низкое"</string>
     <string name="pref_video_time_lapse_frame_interval_title" msgid="4975260837607993569">"Замедленная съемка"</string>
     <string name="pref_camera_settings_category" msgid="4274141528139077830">"Настройки камеры"</string>
     <string name="pref_camcorder_settings_category" msgid="3553148484755353397">"Настройки видеокамеры"</string>
@@ -178,8 +176,8 @@
     <string name="pref_camera_countdown_label_ten" msgid="4372650985906500604">"10 СЕКУНД"</string>
     <string name="pref_camera_countdown_label_fifteen" msgid="8469955900530268867">"15 СЕКУНД"</string>
     <string name="not_selectable_in_scene_mode" msgid="3260801086980522611">"Недоступно в режиме съемки"</string>
-    <string name="pref_exposure_title" msgid="7525751789152582800">"Экспокоррекция"</string>
-    <string name="pref_exposure_label" msgid="2604738602400261218">"ЭКСПОКОРРЕКЦИЯ"</string>
+    <string name="pref_exposure_title" msgid="7525751789152582800">"Выдержка"</string>
+    <string name="pref_exposure_label" msgid="2604738602400261218">"ВЫДЕРЖКА"</string>
     <!-- no translation found for pref_camera_hdr_default (5054955236904902318) -->
     <skip />
     <!-- no translation found for pref_camera_hdr_plus_default (4827897029274554907) -->

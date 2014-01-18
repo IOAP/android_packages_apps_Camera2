@@ -23,7 +23,7 @@
     <string name="details_ms">%1$02d:%2$02d</string>
     <!-- Used to format video duration in Details dialog. hours:minutes:seconds e.g. 0:21:30 -->
     <string name="details_hms">%1$d:%2$02d:%3$02d</string>
-
+    <string name="select_image">Select image</string>
     <!-- Displayed in the title of the dialog for things to do with a picture
              that is to be "set as" (e.g. set as contact photo or set as wallpaper) -->
     <string name="set_image">Set picture as</string>
@@ -231,8 +231,8 @@
 
     <!-- The Video quality settings in preference [CHAR LIMIT=21] -->
     <string name="pref_video_quality_title">Video quality</string>
-    <!-- The default quality value is 3 (CIF) -->
-    <string name="pref_video_quality_default" translatable="false">3</string>
+    <!-- The default quality value is 5 (720p) -->
+    <string name="pref_video_quality_default" translatable="false">5</string>
     <!-- Video quality setting entry.
     Videos will be recorded in 4k DCI quality. [CHAR LIMIT=24] -->
     <string name="pref_video_quality_entry_4kdci" translatable="false">
@@ -680,10 +680,4 @@ CHAR LIMIT = NONE] -->
 
     <!--  String shown when setting the homepage wallpaper in the background [CHAR LIMIT=NONE] -->
     <string name="setting_wallpaper">Setting wallpaper</string>
-
-   <!--  String shown when storage set [CHAR LIMIT=NONE] -->
-    <string name="pref_storage">Storage</string>
-    <string name="pref_storage_internal">Internal Memory</string>
-    <string name="pref_storage_sdcard">Sd Card</string>
-
  </resources>

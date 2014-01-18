@@ -20,9 +20,7 @@ package com.android.camera;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.res.Configuration;
-import android.content.res.TypedArray;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.RectF;
@@ -39,12 +37,13 @@ import android.view.View.OnClickListener;
 import android.view.View.OnLayoutChangeListener;
 import android.view.ViewGroup;
 import android.view.ViewStub;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.widget.FrameLayout.LayoutParams;
 import android.widget.ImageView;
 import android.widget.PopupWindow;
 import android.widget.Toast;
 import android.os.SystemProperties;
-import android.graphics.Canvas;
 
 import com.android.camera.CameraPreference.OnPreferenceChangedListener;
 import com.android.camera.FocusOverlayManager.FocusUI;
@@ -59,7 +58,6 @@ import com.android.camera.ui.ModuleSwitcher;
 import com.android.camera.ui.PieRenderer;
 import com.android.camera.ui.PieRenderer.PieListener;
 import com.android.camera.ui.RenderOverlay;
-import com.android.camera.ui.RotateImageView;
 import com.android.camera.ui.ZoomRenderer;
 import com.android.camera.util.CameraUtil;
 import com.android.camera2.R;
@@ -102,9 +100,14 @@ public class PhotoUI implements PieListener,
     private AlertDialog mLocationDialog;
 
     // Small indicators which show the camera settings in the viewfinder.
-    private ImageView mSceneDetectView;
-
     private OnScreenIndicators mOnScreenIndicators;
+
+    // Corner indicator for gps
+    private ImageView mGpsIndicator;
+    private ImageView mGpsIndicatorBlinker;
+
+    private boolean mGpsAnimationStarted;
+    private Animation mGpsAnimation;
 
     private PieRenderer mPieRenderer;
     private ZoomRenderer mZoomRenderer;
@@ -221,6 +224,8 @@ public class PhotoUI implements PieListener,
         mTextureView = (TextureView) mRootView.findViewById(R.id.preview_content);
         mTextureView.setSurfaceTextureListener(this);
         mTextureView.addOnLayoutChangeListener(mLayoutListener);
+        mGpsAnimation = AnimationUtils.loadAnimation(activity,
+            R.anim.gps_animation);
         initIndicators();
 
         mShutterButton = (ShutterButton) mRootView.findViewById(R.id.shutter_button);
@@ -235,8 +240,6 @@ public class PhotoUI implements PieListener,
             mFaceView = (FaceView) mRootView.findViewById(R.id.face_view);
             setSurfaceTextureSizeChangedListener(mFaceView);
         }
-        mSceneDetectView = (ImageView) mRootView.findViewById(R.id.scene_detect_icon);
-
         mCameraControls = (CameraControls) mRootView.findViewById(R.id.camera_controls);
         mAnimationManager = new AnimationManager();
 
@@ -266,7 +269,7 @@ public class PhotoUI implements PieListener,
         mSurfaceTextureSizeListener = listener;
     }
 
-    public void updatePreviewAspectRatio(float aspectRatio) {
+    public void updatePreviewAspectRatio(float aspectRatio, boolean isTrueView) {
         if (aspectRatio <= 0) {
             Log.e(TAG, "Invalid aspect ratio: " + aspectRatio);
             return;
@@ -276,7 +279,7 @@ public class PhotoUI implements PieListener,
         }
 
         if (mAspectRatio != aspectRatio) {
-            mAspectRatio = aspectRatio;
+            if (!isTrueView) mAspectRatio = aspectRatio;
             // Update transform matrix with the new aspect ratio.
             if (mPreviewWidth != 0 && mPreviewHeight != 0) {
                 setTransformMatrix(mPreviewWidth, mPreviewHeight);
@@ -288,7 +291,7 @@ public class PhotoUI implements PieListener,
         mMatrix = mTextureView.getTransform(mMatrix);
         float scaleX = 1f, scaleY = 1f;
         float scaledTextureWidth, scaledTextureHeight;
-        if (mOrientationResize){
+        if (mOrientationResize && !mActivity.mTrueView) {
             scaledTextureWidth = height * mAspectRatio;
             if(scaledTextureWidth > width){
                 scaledTextureWidth = width;
@@ -298,15 +301,15 @@ public class PhotoUI implements PieListener,
             }
         } else {
             if (width > height) {
-                scaledTextureWidth = Math.max(width,
-                        (int) (height * mAspectRatio));
-                scaledTextureHeight = Math.max(height,
-                        (int)(width / mAspectRatio));
+                scaledTextureWidth = mActivity.mTrueView ? (height * mAspectRatio)
+                        : Math.max(width,(int) (height * mAspectRatio));
+                scaledTextureHeight = mActivity.mTrueView ? height
+                        : Math.max(height,(int)(width / mAspectRatio));
             } else {
-                scaledTextureWidth = Math.max(width,
-                        (int) (height / mAspectRatio));
-                scaledTextureHeight = Math.max(height,
-                        (int) (width * mAspectRatio));
+                scaledTextureWidth = mActivity.mTrueView ? width
+                        : Math.max(width,(int) (height / mAspectRatio));
+                scaledTextureHeight = mActivity.mTrueView ? (width * mAspectRatio)
+                        : Math.max(height,(int) (width * mAspectRatio));
             }
         }
 
@@ -378,6 +381,8 @@ public class PhotoUI implements PieListener,
     private void initIndicators() {
         mOnScreenIndicators = new OnScreenIndicators(mActivity,
                 mRootView.findViewById(R.id.on_screen_indicators));
+        mGpsIndicator = (ImageView) mRootView.findViewById(R.id.indicator_gps);
+        mGpsIndicatorBlinker = (ImageView) mRootView.findViewById(R.id.indicator_gps_blinker);
     }
 
     public void onCameraOpened(PreferenceGroup prefGroup, ComboPreferences prefs,
@@ -564,10 +569,41 @@ public class PhotoUI implements PieListener,
     }
 
     @Override
-    public void showGpsOnScreenIndicator(boolean hasSignal) { }
+    public void showGpsOnScreenIndicator(boolean enabled, boolean hasSignal) {
+        if (mGpsIndicator == null || mGpsIndicatorBlinker == null) {
+            return;
+        }
+
+        if (!enabled) {
+            mGpsIndicator.setImageResource(R.drawable.ic_viewfinder_gps_off);
+        } else if (hasSignal) {
+            mGpsIndicator.setImageResource(R.drawable.ic_viewfinder_gps_on);
+        } else {
+            mGpsIndicator.setImageResource(R.drawable.ic_viewfinder_gps_no_signal);
+        }
+        mGpsIndicator.setVisibility(View.VISIBLE);
+
+        if (enabled && !hasSignal && !mGpsAnimationStarted) {
+            mGpsAnimationStarted = true;
+            mGpsIndicatorBlinker.setVisibility(View.VISIBLE);
+            mGpsIndicatorBlinker.startAnimation(mGpsAnimation);
+        } else if (enabled && hasSignal) {
+            mGpsAnimationStarted = false;
+            mGpsIndicatorBlinker.setVisibility(View.GONE);
+            mGpsIndicatorBlinker.clearAnimation();
+        }
+    }
 
     @Override
-    public void hideGpsOnScreenIndicator() { }
+    public void hideGpsOnScreenIndicator() {
+        if (mGpsIndicator == null || mGpsIndicatorBlinker == null) {
+            return;
+        }
+        mGpsIndicator.setVisibility(View.GONE);
+        mGpsIndicatorBlinker.setVisibility(View.GONE);
+        mGpsIndicatorBlinker.clearAnimation();
+        mGpsAnimationStarted = false;
+    }
 
     public void overrideSettings(final String ... keyvalues) {
         if (mMenu == null) return;
@@ -940,20 +976,11 @@ public class PhotoUI implements PieListener,
         mFaceView.setFaces(faces);
     }
 
-
-    public boolean onScaleStepResize(boolean direction)
-    {
-        if(mGestures != null){
+    public boolean onScaleStepResize(boolean direction) {
+        if (mGestures != null) {
             return mGestures.onScaleStepResize(direction);
         }
         return false;
-    }
-
-    public void onScaleChangeDraw(Canvas canvas)
-    {
-        if(mGestures != null){
-            mGestures.onScaleChangeDraw(canvas);
-        }
     }
 
     @Override
@@ -963,23 +990,4 @@ public class PhotoUI implements PieListener,
         mController.updateCameraOrientation();
     }
 
-    public void updateSceneDetectionIcon(String scene) {
-        if (scene == null) {
-            mSceneDetectView.setVisibility(View.GONE);
-            return;
-        }
-        String[] values = mActivity.getResources().getStringArray(R.array.camera_asd_values);
-        int i = 0;
-        for (i = 0; i < values.length; i++) {
-            if (values[i].equals(scene)) {
-                break;
-            }
-        }
-        if (i < values.length) {
-            TypedArray imgs = mActivity.getResources().obtainTypedArray(R.array.camera_asd_icons);
-            mSceneDetectView.setImageResource(imgs.getResourceId(i, -1));
-        }
-        mSceneDetectView.setVisibility(View.VISIBLE);
-    }
 }
-

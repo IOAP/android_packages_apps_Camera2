@@ -29,6 +29,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.SharedPreferences.Editor;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.drawable.ColorDrawable;
@@ -39,6 +40,7 @@ import android.nfc.NfcEvent;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -128,6 +130,7 @@ public class CameraActivity extends Activity
 
     /** Whether onResume should reset the view to the preview. */
     private boolean mResetToPreviewOnResume = true;
+    public static boolean mTrueView = false;
 
     // Supported operations at FilmStripView. Different data has different
     // set of supported operations.
@@ -160,9 +163,12 @@ public class CameraActivity extends Activity
     private int mResultCodeForTesting;
     private Intent mResultDataForTesting;
     private OnScreenHint mStorageHint;
+    private String mStoragePath;
     private long mStorageSpaceBytes = Storage.LOW_STORAGE_THRESHOLD_BYTES;
     private boolean mAutoRotateScreen;
     private boolean mSecureCamera;
+    private boolean mInCameraApp = true;
+    private boolean mPowerKey;
     // This is a hack to speed up the start of SecureCamera.
     private static boolean sFirstStartAfterScreenOn = true;
     private int mLastRawOrientation;
@@ -494,6 +500,47 @@ public class CameraActivity extends Activity
                 "thumbnailTap");
 
         mFilmStripView.getController().goToNextItem();
+    }
+
+    public void setPowerKey(boolean enabled) {
+        mPowerKey = enabled;
+        initPowerKey(true);
+    }
+
+    public void initPowerKey(boolean enabled) {
+        try {
+            if (enabled && mPowerKey) {
+                getWindow().addFlags(WindowManager.LayoutParams.PREVENT_POWER_KEY);
+            } else {
+                getWindow().clearFlags(WindowManager.LayoutParams.PREVENT_POWER_KEY);
+            }
+        } catch (SecurityException ex) {
+            mPowerKey = false;
+            SharedPreferences preferences = this.getSharedPreferences(
+                ComboPreferences.getGlobalSharedPreferencesName(this),
+                Context.MODE_PRIVATE);
+            Editor editor = preferences.edit();
+            editor.putString(CameraSettings.KEY_POWER_KEY_SHUTTER, "off");
+            editor.apply();
+        }
+    }
+
+    protected boolean initSmartCapture(ComboPreferences prefs, boolean isVideo) {
+        return prefs.getString(isVideo
+            ? CameraSettings.KEY_SMART_CAPTURE_VIDEO
+            : CameraSettings.KEY_SMART_CAPTURE_PHOTO,
+            getResources().getString(R.string.pref_smart_capture_default))
+            .equals(getResources().getString(R.string.setting_on_value));
+    }
+
+    protected void initTrueView(ComboPreferences prefs) {
+        if (prefs.getString(CameraSettings.KEY_TRUE_VIEW,
+            getResources().getString(R.string.pref_true_view_default))
+            .equals(getResources().getString(R.string.setting_on_value))) {
+            mTrueView = true;
+        } else {
+            mTrueView = false;
+        }
     }
 
     /**
@@ -1352,8 +1399,28 @@ public class CameraActivity extends Activity
         return mAutoRotateScreen;
     }
 
+    protected boolean setStoragePath(SharedPreferences prefs) {
+        String storagePath = prefs.getString(CameraSettings.KEY_STORAGE,
+                Environment.getExternalStorageDirectory().toString());
+        Storage.getInstance().setRoot(storagePath);
+        if (storagePath.equals(mStoragePath)) {
+            return false;
+        }
+        mStoragePath = storagePath;
+        if (mDataAdapter != null) {
+            mDataAdapter.flush();
+            mDataAdapter.requestLoad(getContentResolver());
+        }
+
+        // Update the gallery app
+        Intent intent = new Intent("com.android.gallery3d.STORAGE_CHANGE");
+        intent.putExtra(CameraSettings.KEY_STORAGE, storagePath);
+        sendBroadcast(intent);
+        return true;
+    }
+
     protected void updateStorageSpace() {
-        mStorageSpaceBytes = Storage.getAvailableSpace();
+        mStorageSpaceBytes = Storage.getInstance().getAvailableSpace();
     }
 
     protected long getStorageSpaceBytes() {
@@ -1411,6 +1478,10 @@ public class CameraActivity extends Activity
 
     public boolean isSecureCamera() {
         return mSecureCamera;
+    }
+
+    public boolean isInCameraApp() {
+        return mInCameraApp;
     }
 
     @Override
@@ -1623,7 +1694,6 @@ public class CameraActivity extends Activity
         }
     }
 
-
     /**
      * Check whether camera controls are visible.
      *
@@ -1641,6 +1711,14 @@ public class CameraActivity extends Activity
      */
     private void setPreviewControlsVisibility(boolean showControls) {
         mCurrentModule.onPreviewFocusChanged(showControls);
+
+        // based on the information if we have controls or not
+        // activate the override for the power key
+        initPowerKey(showControls);
+
+        // controls are only shown when the camera app is active
+        // so we can assume to fetch this information from here
+        mInCameraApp = showControls;
     }
 
     // Accessor methods for getting latency times used in performance testing
