@@ -39,7 +39,6 @@ import com.android.camera.util.ApiHelper;
 public class Storage {
     private static final String TAG = "CameraStorage";
 
-    public static final String RAW_DIRECTORY = "/raw";
     public static final String JPEG_POSTFIX = ".jpg";
 
     public static final long UNAVAILABLE = -1L;
@@ -47,11 +46,19 @@ public class Storage {
     public static final long UNKNOWN_SIZE = -3L;
     public static final long LOW_STORAGE_THRESHOLD_BYTES = 50000000;
 
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
+    private static void setImageSize(ContentValues values, int width, int height) {
+        // The two fields are available since ICS but got published in JB
+        if (ApiHelper.HAS_MEDIA_COLUMNS_WIDTH_AND_HEIGHT) {
+            values.put(MediaColumns.WIDTH, width);
+            values.put(MediaColumns.HEIGHT, height);
+        }
+    }
+
     private String mRoot = Environment.getExternalStorageDirectory().toString();
     private static Storage sStorage;
 
-    // Singleton
-    private Storage() {}
+    private Storage() { }
 
     public static Storage getInstance() {
         if (sStorage == null) {
@@ -64,16 +71,7 @@ public class Storage {
         mRoot = root;
     }
 
-    @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
-    private static void setImageSize(ContentValues values, int width, int height) {
-        // The two fields are available since ICS but got published in JB
-        if (ApiHelper.HAS_MEDIA_COLUMNS_WIDTH_AND_HEIGHT) {
-            values.put(MediaColumns.WIDTH, width);
-            values.put(MediaColumns.HEIGHT, height);
-        }
-    }
-
-    public String writeFile(String path, byte[] jpeg, ExifInterface exif,
+    public void writeFile(String path, byte[] jpeg, ExifInterface exif,
             String mimeType) {
         if (exif != null && (mimeType == null ||
             mimeType.equalsIgnoreCase("jpeg"))) {
@@ -84,15 +82,14 @@ public class Storage {
             }
         } else if (jpeg != null) {
             if (!(mimeType.equalsIgnoreCase("jpeg") || mimeType == null)) {
-                 File dir = new File(generateDirectory() + RAW_DIRECTORY);
+                 File dir = new File(generateRawDirectory());
                  dir.mkdirs();
             }
             writeFile(path, jpeg);
         }
-        return path;
     }
 
-    public String writeFile(String path, byte[] data) {
+    public void writeFile(String path, byte[] data) {
         FileOutputStream out = null;
         try {
             out = new FileOutputStream(path);
@@ -106,7 +103,6 @@ public class Storage {
                 Log.e(TAG, "Failed to close file after write", e);
             }
         }
-        return path;
     }
 
     // Save the image with a given mimeType and add it the MediaStore.
@@ -203,6 +199,14 @@ public class Storage {
         }
     }
 
+    public String generateFilepath(String title, String pictureFormat) {
+        if (pictureFormat.equalsIgnoreCase("jpeg") || pictureFormat == null) {
+            return generateDirectory() + '/' + title + ".jpg";
+        } else {
+            return generateRawDirectory() + '/' + title + ".raw";
+        }
+    }
+
     private String generateDCIM() {
         return new File(mRoot, Environment.DIRECTORY_DCIM).toString();
     }
@@ -211,12 +215,16 @@ public class Storage {
         return generateDCIM() + "/Camera";
     }
 
-    public String generateFilepath(String title, String pictureFormat) {
-        if (pictureFormat.equalsIgnoreCase("jpeg") || pictureFormat == null) {
-            return generateDirectory() + '/' + title + ".jpg";
-        } else {
-            return generateDirectory() + RAW_DIRECTORY + '/' + title + ".raw";
-        }
+    public String generateRawDirectory() {
+        return generateDirectory() + "/raw";
+    }
+
+    public String generateBucketId() {
+        return String.valueOf(generateBucketIdInt());
+    }
+
+    public int generateBucketIdInt() {
+        return generateDirectory().toLowerCase().hashCode();
     }
 
     public long getAvailableSpace() {
@@ -255,7 +263,7 @@ public class Storage {
         }
     }
 
-    private Uri insertImage(ContentResolver resolver, ContentValues values) {
+    private static Uri insertImage(ContentResolver resolver, ContentValues values) {
         Uri uri = null;
         try {
             uri = resolver.insert(Images.Media.EXTERNAL_CONTENT_URI, values);

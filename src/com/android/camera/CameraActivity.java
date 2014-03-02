@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2012 The Android Open Source Project
+ * Copyright (C) 2013-2014 The CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +30,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
-import android.content.SharedPreferences.Editor;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.drawable.ColorDrawable;
@@ -130,7 +130,6 @@ public class CameraActivity extends Activity
 
     /** Whether onResume should reset the view to the preview. */
     private boolean mResetToPreviewOnResume = true;
-    public static boolean mTrueView = false;
 
     // Supported operations at FilmStripView. Different data has different
     // set of supported operations.
@@ -168,7 +167,8 @@ public class CameraActivity extends Activity
     private boolean mAutoRotateScreen;
     private boolean mSecureCamera;
     private boolean mInCameraApp = true;
-    private boolean mPowerKey;
+    // Keep track of powershutter state
+    public static boolean mPowerShutter = false;
     // This is a hack to speed up the start of SecureCamera.
     private static boolean sFirstStartAfterScreenOn = true;
     private int mLastRawOrientation;
@@ -500,47 +500,6 @@ public class CameraActivity extends Activity
                 "thumbnailTap");
 
         mFilmStripView.getController().goToNextItem();
-    }
-
-    public void setPowerKey(boolean enabled) {
-        mPowerKey = enabled;
-        initPowerKey(true);
-    }
-
-    public void initPowerKey(boolean enabled) {
-        try {
-            if (enabled && mPowerKey) {
-                getWindow().addFlags(WindowManager.LayoutParams.PREVENT_POWER_KEY);
-            } else {
-                getWindow().clearFlags(WindowManager.LayoutParams.PREVENT_POWER_KEY);
-            }
-        } catch (SecurityException ex) {
-            mPowerKey = false;
-            SharedPreferences preferences = this.getSharedPreferences(
-                ComboPreferences.getGlobalSharedPreferencesName(this),
-                Context.MODE_PRIVATE);
-            Editor editor = preferences.edit();
-            editor.putString(CameraSettings.KEY_POWER_KEY_SHUTTER, "off");
-            editor.apply();
-        }
-    }
-
-    protected boolean initSmartCapture(ComboPreferences prefs, boolean isVideo) {
-        return prefs.getString(isVideo
-            ? CameraSettings.KEY_SMART_CAPTURE_VIDEO
-            : CameraSettings.KEY_SMART_CAPTURE_PHOTO,
-            getResources().getString(R.string.pref_smart_capture_default))
-            .equals(getResources().getString(R.string.setting_on_value));
-    }
-
-    protected void initTrueView(ComboPreferences prefs) {
-        if (prefs.getString(CameraSettings.KEY_TRUE_VIEW,
-            getResources().getString(R.string.pref_true_view_default))
-            .equals(getResources().getString(R.string.setting_on_value))) {
-            mTrueView = true;
-        } else {
-            mTrueView = false;
-        }
     }
 
     /**
@@ -1403,10 +1362,13 @@ public class CameraActivity extends Activity
         String storagePath = prefs.getString(CameraSettings.KEY_STORAGE,
                 Environment.getExternalStorageDirectory().toString());
         Storage.getInstance().setRoot(storagePath);
+
         if (storagePath.equals(mStoragePath)) {
             return false;
         }
         mStoragePath = storagePath;
+
+        // Sync the swipe preview with the right path
         if (mDataAdapter != null) {
             mDataAdapter.flush();
             mDataAdapter.requestLoad(getContentResolver());
@@ -1454,6 +1416,19 @@ public class CameraActivity extends Activity
         } else if (mStorageHint != null) {
             mStorageHint.cancel();
             mStorageHint = null;
+        }
+    }
+
+    protected void initPowerShutter(ComboPreferences prefs) {
+        String val = prefs.getString(CameraSettings.KEY_POWER_SHUTTER,
+                getResources().getString(R.string.pref_camera_power_shutter_default));
+        if (!CameraUtil.hasCameraKey()) {
+            mPowerShutter = val.equals(CameraSettings.VALUE_ON);
+        }
+        if (mPowerShutter && mInCameraApp) {
+            getWindow().addFlags(WindowManager.LayoutParams.PREVENT_POWER_KEY);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.PREVENT_POWER_KEY);
         }
     }
 
@@ -1694,6 +1669,7 @@ public class CameraActivity extends Activity
         }
     }
 
+
     /**
      * Check whether camera controls are visible.
      *
@@ -1711,10 +1687,6 @@ public class CameraActivity extends Activity
      */
     private void setPreviewControlsVisibility(boolean showControls) {
         mCurrentModule.onPreviewFocusChanged(showControls);
-
-        // based on the information if we have controls or not
-        // activate the override for the power key
-        initPowerKey(showControls);
 
         // controls are only shown when the camera app is active
         // so we can assume to fetch this information from here

@@ -201,7 +201,7 @@ public class PreviewGestures
     }
 
     public boolean onScaleStepResize(boolean direction) {
-        if (mZoom != null) {
+        if(mZoom != null){
             return mZoom.onScaleStepResize(direction);
         }
         return false;

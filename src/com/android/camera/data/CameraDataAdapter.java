@@ -132,8 +132,7 @@ public class CameraDataAdapter implements LocalDataAdapter {
     // TODO: put the database query on background thread
     @Override
     public void addNewVideo(ContentResolver cr, Uri uri) {
-        final String[] cameraPath =
-                { Storage.getInstance().generateDirectory() + "%" };
+        String[] cameraPath = { Storage.getInstance().generateDirectory() + "%" };
         Cursor c = cr.query(uri,
                 LocalMediaData.VideoData.QUERY_PROJECTION,
                 MediaStore.Images.Media.DATA + " like ? ", cameraPath,
@@ -154,13 +153,13 @@ public class CameraDataAdapter implements LocalDataAdapter {
         } else {
             Log.e(TAG, "video data not found");
         }
+        c.close();
     }
 
     // TODO: put the database query on background thread
     @Override
     public void addNewPhoto(ContentResolver cr, Uri uri) {
-        final String[] cameraPath =
-                { Storage.getInstance().generateDirectory() + "%" };
+        String[] cameraPath = { Storage.getInstance().generateDirectory() + "%" };
         Cursor c = cr.query(uri,
                 LocalMediaData.PhotoData.QUERY_PROJECTION,
                 MediaStore.Images.Media.DATA + " like ? ", cameraPath,
@@ -178,6 +177,7 @@ public class CameraDataAdapter implements LocalDataAdapter {
             // a new data.
             insertData(newData);
         }
+        c.close();
     }
 
     @Override
@@ -281,9 +281,8 @@ public class CameraDataAdapter implements LocalDataAdapter {
          */
         @Override
         protected LocalDataList doInBackground(ContentResolver... resolver) {
+            String[] cameraPath = { Storage.getInstance().generateDirectory() + "%" };
             LocalDataList l = new LocalDataList();
-            final String[] cameraPath =
-                    { Storage.getInstance().generateDirectory() + "%" };
             // Photos
             Cursor c = resolver[0].query(
                     LocalMediaData.PhotoData.CONTENT_URI,
